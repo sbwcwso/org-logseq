@@ -600,7 +600,7 @@ If there is not uuid of current block, send a message."
 (defvar org-logseq-bonus-time 0)
 (defvar org-logseq-pomodoro-time 0)
 (defvar org-logseq-time-re
-  (rx (+ (| (group-n 3 (group-n 1 (+ digit)) "h" (? " ")) (group-n 4 (group-n 2 (+ digit)) "min")))
+  (rx (+ (| (group-n 3 (group-n 1 (? "-") (+ digit)) "h" (? " ")) (group-n 4 (group-n 2 (? "-") (+ digit)) "min")))
    ))
 
 (defvar org-logseq-habits '("nofap" "nogame" "novideo"))
@@ -669,7 +669,7 @@ If there is not uuid of current block, send a message."
               (org-entry-put (point) ".punish" punish-time)))
         (if bonus-time
             (progn
-              (setq org-logseq-bonus-time (+ org-logseq-bonus-time (string-to-number bonus-time)))
+              (setq org-logseq-bonus-time (+ org-logseq-bonus-time (org-logseq-get-minutes-from-string bonus-time)))
               (org-entry-delete (point) ".bonus")
               (org-entry-put (point) "bonus" bonus-time)))
         )
@@ -683,7 +683,7 @@ If there is not uuid of current block, send a message."
 
         (if punish-time
             (progn
-              (setq org-logseq-bonus-time (+ org-logseq-bonus-time (string-to-number punish-time)))
+              (setq org-logseq-bonus-time (+ org-logseq-bonus-time (org-logseq-get-minutes-from-string punish-time)))
               (org-entry-delete (point) ".punish")
               (org-entry-put (point) "punish" punish-time)))
         (if bonus-time
