@@ -818,6 +818,30 @@ If today's journal does not exists, switch to yesterday's journal."
   (cursor-sensor-mode t)
   )
 
+(defun org-logseq-insert-clipboard-file-link ()
+  (interactive)
+  (let* ((clipboard-content (substring-no-properties (current-kill 0)))
+         ;; 去除 "file://" 前缀并解码 URI
+         (decoded-path (url-unhex-string (substring clipboard-content 7)))
+         (destination-dir (concat org-logseq-dir "/assets/"))
+         (filename (file-name-nondirectory decoded-path))
+         ;; 生成时间戳后缀
+         (time-suffix (format-time-string "_%Y_%m_%d_%H_%M_%S"))
+         ;; 添加时间戳后缀到文件名
+         (new-filename (concat (file-name-sans-extension filename) time-suffix (file-name-extension filename t)))
+         (destination (concat destination-dir new-filename)))
+
+    ;; 检查解码后的路径是否是一个存在的文件
+    (when (file-exists-p decoded-path)
+      ;; 复制文件到新位置
+      (copy-file decoded-path destination)
+      (delete-file decoded-path)
+
+      ;; 计算相对路径并插入链接
+      (let ((relative-path (file-relative-name destination (file-name-directory (buffer-file-name)))))
+        (insert (format "[[file:%s][%s]]" relative-path filename))))))
+
+
 ;; (add-hook 'org-logseq-mode-hook
 ;;             #'(lambda ()
 ;;                 (add-hook 'after-save-hook 'org-logseq-make-block-ref-overlays nil 'make-it-local)))
