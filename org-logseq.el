@@ -841,6 +841,27 @@ If today's journal does not exists, switch to yesterday's journal."
       (let ((relative-path (file-relative-name destination (file-name-directory (buffer-file-name)))))
         (insert (format "[[file:%s][%s]]" relative-path filename))))))
 
+(defun org-logseq-insert-and-move-file ()
+  (interactive)
+  (let* ((selected-file (read-file-name "Select file: "))
+         (destination-dir (concat org-logseq-dir "/assets/"))
+         (filename (file-name-nondirectory selected-file))
+         ;; 生成时间戳后缀
+         (time-suffix (format-time-string "_%Y_%m_%d_%H_%M_%S"))
+         ;; 添加时间戳后缀到文件名
+         (new-filename (concat (file-name-sans-extension filename) time-suffix (file-name-extension filename t)))
+         (destination (concat destination-dir new-filename)))
+
+    ;; 检查选择的文件是否存在
+    (when (file-exists-p selected-file)
+      ;; 复制文件到新位置
+      (copy-file selected-file destination)
+      (delete-file selected-file)
+
+      ;; 计算相对路径并插入原始文件名的链接
+      (let ((relative-path (file-relative-name destination (file-name-directory (buffer-file-name)))))
+        (insert (format "[[file:%s][%s]]" relative-path filename))))))
+
 
 ;; (add-hook 'org-logseq-mode-hook
 ;;             #'(lambda ()
