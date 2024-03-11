@@ -863,6 +863,36 @@ If today's journal does not exists, switch to yesterday's journal."
         (insert (format "[[file:%s][%s]]" relative-path filename))))))
 
 
+(defun org-logseq-compact-region-and-replace-formula (start end)
+  "Compact the region by removing extra lines, adding spaces, and replacing formula patterns, while preserving the final newline in the region."
+  (interactive "r")
+  (save-excursion
+    ;; 删除选中区域内多余的空行
+    (goto-char start)
+    (while (re-search-forward "[ \t]*\n[ \t]*\n*" end t)
+      (replace-match " " nil nil))
+    (setq end (point-marker)) ; 更新end为marker，自动调整位置
+    ;; 确保每行末尾有一个空格
+    (goto-char start)
+    (while (< (point) end)
+      (end-of-line)
+      (insert " ")
+      (forward-line 1))
+    ;; 查找并替换符合模式的字符串
+    (goto-char start)
+    (let ((pattern "\\( \\)\\\\(\\(.*?\\)\\\\)\\(.*?\\)\\( \\)")
+          (replacement "\\1\\\\(\\2\\\\)\\4"))
+      (while (re-search-forward pattern end t)
+        (replace-match replacement nil nil)))
+    (goto-char start)
+    (while (re-search-forward " \\([.,]\\)" end t)
+      (replace-match "\\1" nil nil))
+    ;; 检查并确保选中区域末尾是一个换行符
+    (goto-char end)
+    (unless (or (= (point) (point-max))
+                (string= "\n" (buffer-substring-no-properties end (1+ end))))
+      (insert "\n"))))
+
 ;; (add-hook 'org-logseq-mode-hook
 ;;             #'(lambda ()
 ;;                 (add-hook 'after-save-hook 'org-logseq-make-block-ref-overlays nil 'make-it-local)))
