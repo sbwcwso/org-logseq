@@ -300,18 +300,22 @@ If can't find update the id locations and try again."
 But not change the keyboard focus.
 In order to use this function, you need to manually open logseq in advance."
   ;; (message (concat "xdg-open \"logseq://graph/Logseq_notes?" title-or-id "\""))
-  (message (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
-  (shell-command
-   (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
+  (let ((command (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\"")))
+    (shell-command command))
+
+  ;; (message (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
+  ;; (shell-command
+  ;;  (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
 
   ;; (shell-command-to-string "xdotool getwindowfocus")
   ;; (shell-command (format "currentwindow=$(xdotool getwindowfocus);xdg-open 'logseq://graph/Logseq_notes?%s';xdotool windowactivate $currentwindow" title-or-id))
-  (message (shell-quote-argument (frame-parameter nil 'name))
-           )
   (org-logseq-activate-window-by-graph)
-  (shell-command
-   (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
-           " windowactivate %1"))
+  (let ((command (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+                        " windowactivate %1")))
+    (setq command (replace-regexp-in-string "\\+" "\\\\+" command))
+    (message "%s" command)
+    (shell-command command)
+    )
   ;; (shell-command
   ;;  (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
   ;;          " windowactivate %1"))
@@ -370,14 +374,28 @@ In order to use this function, you need to manually open logseq in advance."
   (org-map-entries '(org-set-property "collapsed" "true") "LEVEL=1"))
 
 ;;;###autoload
+(defun org-logseq-url-hexify-string (str)
+  "URL encode a string in a way similar to JavaScript's encodeURIComponent."
+  (apply 'concat
+         (mapcar (lambda (char)
+                   (let ((ascii (char-to-string char)))
+                     (if (or (and (>= char ?A) (<= char ?Z))  ; A-Z
+                             (and (>= char ?a) (<= char ?z))  ; a-z
+                             (and (>= char ?0) (<= char ?9))  ; 0-9
+                             (member char '(?- ?_ ?. ?~)))   ; - _ . ~
+                         ascii
+                       (format "%%%02X" char))))
+                 str)))
+
 (defun org-logseq-open-external-by-title (&optional title)
   "Open logseq page by current buffer's #+title or TITLE."
   (interactive)
   ;; TODO handel the situation that there is no page named title.
   (org-logseq-set-title)
-  (if (not (when-let ((title (or title (org-logseq-get-begin-value "title")))
+  (if (not (when-let ((title (org-logseq-url-hexify-string (or title (org-logseq-get-begin-value "title"))))
                       (title-link (concat "page=" title)))
-             (org-logseq-open-external title-link)))
+             (org-logseq-open-external title-link)
+             ))
       (message "There is not #+TITLE or #+title property in current buffer.")))
 
 ;;;###autoload
