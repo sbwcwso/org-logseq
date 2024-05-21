@@ -37,6 +37,21 @@
   "Path of logseq notes."
   :group 'org-logseq)
 
+(defcustom org-loseq-graph nil
+  "Name of logseq graph."
+  :group 'org-logseq)
+
+(defcustom org-logseq-graph-index 0
+  "Window number of the graph"
+  :group 'org-logseq)
+
+(defcustom org-logseq-graph-window-table (make-hash-table :test 'equal)
+  "window index table of graph, used for org-logseq-open-external")
+
+(defcustom org-logseq-create-journal-command nil
+  "The command to create journal"
+  :group 'org-logseq)
+
 (defcustom org-logseq-new-page-p nil
   "Non-nil means creating a page if not exist."
   :group 'org-logseq)
@@ -49,6 +64,7 @@
 (defcustom org-logseq-block-embed-overlay-p nil
   "Non-nil means to enable block ref by default."
   :group 'org-logseq)
+
 (make-variable-buffer-local 'org-logseq-block-embed-overlay-p)
 
 
@@ -176,14 +192,18 @@ if the FILE-NAME is current buffer, jump to the line."
         (cons 'id id)))))
 
 (defun org-logseq-get-link ()
-  "Return a cons: \"('type . link)\" at point. The type can be 'url, 'page, denoting the link type."
+  "Return a cons: \"('type . link)\" at point. The type can be 'url,'xdg, 'page, denoting the link type."
   (save-excursion
     (let ((context (org-element-context)) link)
       (when (eq 'link (car context))
         (setq link (org-element-property :raw-link context))
         (cond ((string-match "\\(?:https?\\)" link)
                (cons 'url link))
+              ((string-match "\\(?:logseq?\\)" link)
+               (cons 'xdg link))
               (t (cons 'page link)))))))
+
+
 
 (defun org-logseq-get-block-ref-from-overlay ()
   "Return \"('id . uuid)\" if point is a overlay created by org-logseq."
@@ -250,17 +270,51 @@ If can't find update the id locations and try again."
     (org-fold-hide-subtree)
     (org-show-children)))
 
+(defun  org-logseq-activate-window-by-graph (&optional target-graph-name)
+  (interactive)
+  (let* ((command "xdotool search --onlyvisible --classname  \"logseq\"")
+         (output (shell-command-to-string command))
+         (window-ids-unsorted (split-string output "\n" t))
+         (window-ids (sort window-ids-unsorted
+                           (lambda (a b)
+                             (< (string-to-number a) (string-to-number b))))))  ; 将字符串转换为数值并排序
+    (let* ((graph-name (if target-graph-name target-graph-name org-logseq-graph))
+          (target-id (if (= (length window-ids) 1)
+                         (car window-ids)  ; 如果只有一个窗口，忽略索引参数
+                       (nth ( let ((index (gethash graph-name org-logseq-graph-window-table)))
+                              (if index
+                                  index
+                                0)
+                             )
+                            window-ids))))  ; 如果有多个窗口，使用索引选择窗口
+      (if target-id
+          (progn
+            (shell-command (format "xdotool windowactivate %s" target-id))
+            (message "Activated window ID: %s" target-id))
+        (message "No window found with the title '%s'" title)))))
+
+
+
 (defun org-logseq-open-external (title-or-id)
   "Change logseq page through xdg-open by TITLE-OR-ID.
 But not change the keyboard focus.
 In order to use this function, you need to manually open logseq in advance."
+  ;; (message (concat "xdg-open \"logseq://graph/Logseq_notes?" title-or-id "\""))
+  (message (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
   (shell-command
-   (concat "xdg-open \"logseq://graph/Logseq_notes?" title-or-id "\""))
+   (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
+
   ;; (shell-command-to-string "xdotool getwindowfocus")
   ;; (shell-command (format "currentwindow=$(xdotool getwindowfocus);xdg-open 'logseq://graph/Logseq_notes?%s';xdotool windowactivate $currentwindow" title-or-id))
+  (message (shell-quote-argument (frame-parameter nil 'name))
+           )
+  (org-logseq-activate-window-by-graph)
   (shell-command
-   (concat "xdotool search --name \"" (shell-quote-argument (frame-parameter nil 'name))
-           "\" windowactivate %1"))
+   (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+           " windowactivate %1"))
+  ;; (shell-command
+  ;;  (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+  ;;          " windowactivate %1"))
    ;; (format "xdotool search --name '%s' windowactivate %%1" (frame-parameter nil 'name))
            ;; )
   ;; (call-process-shell-command
@@ -356,6 +410,20 @@ If there is not uuid of current block, send a message."
                    ('url
                     (browse-url link)
                     (throw 'exit "Open url."))
+                   ('xdg
+                    (shell-command
+                     (concat "xdg-open \"" link "\""))
+                    (let ((graph-name (when (string-match "logseq://graph/\\(.*\\)\\?" link)
+                                        (match-string 1 link))
+                                      ))
+                          (org-logseq-activate-window-by-graph graph-name)
+                          )
+                    (shell-command
+                     (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+                             " windowactivate %1")
+                     )
+                    (throw 'exit "open logseq link")
+                    )
                    ('page (org-logseq-open-external-by-title link)
                           (throw 'exit "Open page according to current block or it's parent's block."))
                    (_ (org-logseq-open-external-by-uuid link)
@@ -567,7 +635,12 @@ If there is not uuid of current block, send a message."
 
 (defun org-logseq-send-keys (key)
   "Send KEY to the logseq window."
-  (shell-command (format  "currentwindow=$(xdotool getwindowfocus);xdotool windowactivate --sync $(xdotool search --class logseq|grep -vF $(xdotool search --name '\\\.pdf' || echo '\"\"')|tail -1); xdotool key %s;xdotool windowactivate $currentwindow" key))
+  ;; (shell-command (format  "currentwindow=$(xdotool getwindowfocus);xdotool windowactivate --sync $(xdotool search --onlyvisible --class logseq|tail -1); xdotool key %s;xdotool windowactivate $currentwindow" key))
+  (org-logseq-activate-window-by-graph org-logseq-graph)
+  (shell-command (format "xdotool key %s;" key))
+  (shell-command
+   (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+           " windowactivate %1"))
   )
 
 (defun org-logseq-page-up ()
@@ -789,8 +862,38 @@ If today's journal does not exists, switch to yesterday's journal."
     (interactive)
     (let ((today-journal-name (org-logseq-get-file-name-from-title (format-time-string "%Y-%m-%d"))))
       (if (not (file-exists-p today-journal-name))
-          (shell-command "~/.dotfiles/scripts/python/diary_template.py -w"))
-      (find-file today-journal-name)))
+          (shell-command org-logseq-create-journal-command))
+      (find-file today-journal-name)
+      (org-logseq-open-external-by-title)))
+
+
+(defun org-logseq-switch-to-previous-day ()
+  "Switch to the previous day's log file with format YYYY_MM_DD.org."
+  (interactive)
+  (let* ((current-filename (buffer-file-name))
+         (date-string (replace-regexp-in-string "_" "-" (file-name-base current-filename)))
+         (current-date (date-to-time date-string))
+         (previous-date (time-subtract current-date (days-to-time 1)))
+         (previous-filename (format-time-string "%Y_%m_%d.org" previous-date)))
+    (if (file-exists-p previous-filename)
+        (progn  (find-file previous-filename)
+                (org-logseq-open-external-by-title))
+      (message "The file for the previous day does not exist."))))
+
+(defun org-logseq-switch-to-next-day ()
+  "Switch to the next day's log file with format YYYY_MM_DD.org."
+  (interactive)
+  (let* ((current-filename (buffer-file-name))
+         (date-string (replace-regexp-in-string "_" "-" (file-name-base current-filename)))
+         (current-date (date-to-time date-string))
+         (next-date (time-add current-date (days-to-time 1)))
+         (next-filename (format-time-string "%Y_%m_%d.org" next-date)))
+    (if (file-exists-p next-filename)
+        (progn
+          (find-file next-filename)
+          (org-logseq-open-external-by-title)
+          )
+      (message "The file for the next day does not exist."))))
 
 
 (defun org-logseq-activate ()
