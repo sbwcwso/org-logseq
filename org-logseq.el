@@ -638,18 +638,33 @@ If there is not uuid of current block, send a message."
 
 ;; xdotools send keys.
 
+
 (defun org-logseq-surround (char)
-  "Wrap of 'evil-surround-region' with CHAR argument, ignore the inline code."
+  "Wrap of 'evil-surround-region' with CHAR argument, ignore the inline code, inline verbatim, and inline formulas."
   (save-excursion
     (let* ((start (region-beginning))
-          (pos (region-end)))
+           (pos (region-end))
+           (patterns '("=\\([^=]*\\)=" "~\\([^~]*\\)~" "\\\\\\([^\\]*\\\\\\)")))
       (goto-char pos)
-      (while (re-search-backward " =.*=[,.]? ?" start t)
-        (if (> pos (match-end 0))
-            (evil-surround-region (match-end 0) pos 'block char))
-        (setq pos (match-beginning 0)))
+      (while (re-search-backward (mapconcat 'identity patterns "\\|") start t)
+        (let ((match-end (match-end 0))
+              (match-start (match-beginning 0)))
+          ;; 向后跳过空格和标点符号
+          (goto-char match-end)
+          (while (looking-at "[[:space:][:punct:]]")
+            (setq match-end (1+ match-end))
+            (forward-char 1))
+          ;; 向前跳过空格和标点符号
+          (goto-char match-start)
+          (while (and (> match-start start) (string-match-p "[[:space:][:punct:]]" (char-to-string (char-before match-start))))
+            (setq match-start (1- match-start)))
+          (if (> pos match-end)
+              (evil-surround-region match-end pos 'block char))
+          (setq pos match-start)))
       (if (> pos start)
           (evil-surround-region start pos 'block char)))))
+
+
 
 (defun org-logseq-send-keys (key)
   "Send KEY to the logseq window."
