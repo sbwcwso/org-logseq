@@ -301,7 +301,9 @@ But not change the keyboard focus.
 In order to use this function, you need to manually open logseq in advance."
   ;; (message (concat "xdg-open \"logseq://graph/Logseq_notes?" title-or-id "\""))
   (let ((command (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\"")))
+    (message "%s" command)
     (shell-command command))
+  (sleep-for 1)
 
   ;; (message (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
   ;; (shell-command
@@ -431,15 +433,18 @@ If there is not uuid of current block, send a message."
                    ('xdg
                     (shell-command
                      (concat "xdg-open \"" link "\""))
+                    (sleep-for 1)
                     (let ((graph-name (when (string-match "logseq://graph/\\(.*\\)\\?" link)
                                         (match-string 1 link))
                                       ))
-                          (org-logseq-activate-window-by-graph graph-name)
+                      (org-logseq-activate-window-by-graph graph-name)
+                      (message link)
+                      (shell-command
+                       (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+                               " windowactivate %1")
+                       )
                           )
-                    (shell-command
-                     (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
-                             " windowactivate %1")
-                     )
+                    
                     (throw 'exit "open logseq link")
                     )
                    ('page (org-logseq-open-external-by-title link)
