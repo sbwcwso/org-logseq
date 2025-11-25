@@ -92,13 +92,21 @@ if the FILE-NAME is current buffer, jump to the line."
   (evil-close-fold)
   (org-fold-show-children))
 
+(defun org-logseq-copy-embed-id ()
+  "Copy embed id at point"
+  (interactive)
+  (let ((res (org-logseq-copy-create-id)))
+    (setq res (format "{{embed %s}}" res))
+    (kill-new res)
+    res))
+
+
 (defun org-logseq-copy-create-id ()
   "Copy id at current point with (()) around it, if id does not exist, create a new one."
   (interactive)
   (let ((id (org-id-get-create)) res)
     (setq res (format "((%s))" id))
     (kill-new res)
-    ;; (xclip res)  # TODO make sure this works
     res))
 
 (defun org-logseq-set-heading ()
@@ -127,8 +135,11 @@ if the FILE-NAME is current buffer, jump to the line."
         (org-next-visible-heading 1))
       (setq res (string-join (reverse headings) "\n"))
       (message res)
+      (evil-exit-visual-state)
       (kill-new res)
-      res)))
+      (evil-set-register ?\" res)
+  res))
+)
 
 (defun org-logseq-copy-ids-from-parents ()
   "Copy ids from the parent title."
@@ -147,7 +158,10 @@ if the FILE-NAME is current buffer, jump to the line."
         )
       (setq res (string-join headings "\n"))
       (message res)
+      ;; (evil-append)
+      (evil-exit-visual-state)
       (kill-new res)
+      ;; (evil-set-register ?\" res)
       res))))
 
 (defun org-logseq-copy-ids-from-region-with-parents ()
@@ -157,6 +171,7 @@ if the FILE-NAME is current buffer, jump to the line."
          (concat (org-logseq-copy-ids-from-parents) "\n"
                  (org-logseq-copy-ids-from-region))))
     (message res)
+     (evil-exit-visual-state)
     (kill-new res)
     res
     )
@@ -201,6 +216,10 @@ if the FILE-NAME is current buffer, jump to the line."
                (cons 'url link))
               ((string-match "\\(?:logseq?\\)" link)
                (cons 'xdg link))
+              ((and (string-match-p "^\\.\\./" link)  ; 确保以 ../ 开头
+                    (string-match-p "assets" link)   ; 确保包含 assets
+                    (string-match-p "\\.pdf$" link)) ; 确保以 .pdf 结尾
+               (cons 'pdf link))
               (t (cons 'page link)))))))
 
 
@@ -211,7 +230,8 @@ if the FILE-NAME is current buffer, jump to the line."
              (create-by-org-logseq-flag (eq (ov-val ov 'category) 'block-ref)))
     (cons 'overlay (ov-val ov 'block-uuid))))
 
-(defun org-logseq-get-file-name-from-title (title-name)
+
+(defun org-logseq-get-file-name-from-title-backup (title-name)
   "Return file name with path by the TITLE-NAME."
   (if (string-match (rx string-start (group (= 4 digit)) "-"
                         (group (= 2 digit)) "-" (group (= 2 digit)) string-end) title-name)
@@ -223,6 +243,20 @@ if the FILE-NAME is current buffer, jump to the line."
     (expand-file-name (concat
                        "pages/" (string-replace "/" "___" title-name) ".org")
                       org-logseq-dir)))
+
+(defun org-logseq-get-file-name-from-title (title-name &optional path)
+  "Return file name with path by the TITLE-NAME."
+  (let ((dir (if path path org-logseq-dir)))
+      (if (string-match (rx string-start (group (= 4 digit)) "-"
+                        (group (= 2 digit)) "-" (group (= 2 digit)) string-end) title-name)
+      (expand-file-name (concat "journals/"
+                                (match-string 1 title-name) "_"
+                                (match-string 2 title-name) "_"
+                                (match-string 3 title-name) ".org")
+                        dir)
+    (expand-file-name (concat
+                       "pages/" (string-replace "/" "___" title-name) ".org")
+                      dir))))
 
 (defun org-logseq-open-page-inside (title)
   "Open logseq by TITLE inside Emacs."
@@ -237,7 +271,8 @@ if the FILE-NAME is current buffer, jump to the line."
     (if (file-exists-p file-name)
         (org-open-file file-name t)
       (org-logseq-create-new-page title))
-    ))
+    )
+  )
 
 (defun org-logseq-update-id-locations ()
   "Update id locations in logseq directories."
@@ -270,8 +305,9 @@ If can't find update the id locations and try again."
     (org-fold-hide-subtree)
     (org-show-children)))
 
-(defun  org-logseq-activate-window-by-graph (&optional target-graph-name)
+(defun org-logseq-activate-window-by-graph (&optional target-graph-name no-delay)
   (interactive)
+  (message "run org-logseq-activate-window-by-graph")
   (let* ((command "xdotool search --onlyvisible --classname  \"logseq\"")
          (output (shell-command-to-string command))
          (window-ids-unsorted (split-string output "\n" t))
@@ -287,10 +323,15 @@ If can't find update the id locations and try again."
                                 0)
                              )
                             window-ids))))  ; 如果有多个窗口，使用索引选择窗口
+      (message "org-logseq-activate-window-by-graph target-id:%s" target-id)
       (if target-id
-          (progn
-            (shell-command (format "xdotool windowactivate %s" target-id))
-            (message "Activated window ID: %s" target-id))
+          (if no-delay
+              (shell-command (format "xdotool windowactivate %s" target-id))
+              (run-with-timer 1 nil
+                                 (lambda ()
+                                   ;; (shell-command (format "wmctrl -i -r %s -b remove,above" target-id))
+                                   (shell-command (format "xdotool windowactivate %s" target-id))
+                                   )))
         (message "No window found with the title '%s'" title)))))
 
 
@@ -300,33 +341,15 @@ If can't find update the id locations and try again."
 But not change the keyboard focus.
 In order to use this function, you need to manually open logseq in advance."
   ;; (message (concat "xdg-open \"logseq://graph/Logseq_notes?" title-or-id "\""))
-  (let ((command (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\"")))
-    (message "%s" command)
-    (shell-command command))
-  (sleep-for 1)
-
-  ;; (message (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
-  ;; (shell-command
-  ;;  (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
-
-  ;; (shell-command-to-string "xdotool getwindowfocus")
-  ;; (shell-command (format "currentwindow=$(xdotool getwindowfocus);xdg-open 'logseq://graph/Logseq_notes?%s';xdotool windowactivate $currentwindow" title-or-id))
-  (org-logseq-activate-window-by-graph)
-  (let ((command (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
-                        " windowactivate %1")))
-    (setq command (replace-regexp-in-string "\\+" "\\\\+" command))
+  (let ((command (concat "xdg-open \"logseq://graph/" org-logseq-graph "?" title-or-id "\""))
+        (window-id (string-trim (shell-command-to-string "xdotool getactivewindow")))
+;; (window-id (string-trim (shell-command-to-string "xdotool getmouselocation --shell | grep WINDOW= | cut -d= -f2")))
+        )
     (message "%s" command)
     (shell-command command)
-    )
-  ;; (shell-command
-  ;;  (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
-  ;;          " windowactivate %1"))
-   ;; (format "xdotool search --name '%s' windowactivate %%1" (frame-parameter nil 'name))
-           ;; )
-  ;; (call-process-shell-command
-  ;;  (concat "xdg-open \"logseq://graph/Logseq_notes?" title-or-id "\";" "xdotool search --name \"" (shell-quote-argument (frame-parameter nil 'name))
-  ;;          "\" windowactivate %1"))
-  )
+  (org-logseq-activate-window-by-graph)
+  (org-logseq-active-window-asynchronous window-id)
+  ))
 
 (defun org-logseq-open-external-by-uuid (block-id)
   "Open logseq by BLOCK-ID."
@@ -410,6 +433,28 @@ If there is not uuid of current block, send a message."
         (org-logseq-open-external-by-uuid uuid)
       (message "There is no uuid of current block!"))))
 
+
+(defun org-logseq-active-window-asynchronous (window-id)
+  "Make sure active given window-id asynchronous, don't use `message'
+it will active the `minibuffer'"
+
+  (shell-command (format "xdotool windowactivate %s" window-id))
+
+  (let ((count 0)
+        (timer nil))
+    (setq timer
+          (run-with-timer 0 0.1
+                          (lambda ()
+                            (if (not (string= (string-trim (shell-command-to-string "xdotool getactivewindow")) window-id))
+
+                            ;; (message "Active emacs window")
+                            (shell-command (format "xdotool windowactivate %s" window-id)))
+                            ;; (message "Run timmer")
+                            (setq count (1+ count))
+                            (when (>= count 30)
+                              (cancel-timer timer))))))
+)
+
 ;;;###autoload
 ;; TODO intergate with org-logseq-open-link
 (defun org-logseq-open-external-at-point ()
@@ -431,20 +476,16 @@ If there is not uuid of current block, send a message."
                     (browse-url link)
                     (throw 'exit "Open url."))
                    ('xdg
-                    (shell-command
-                     (concat "xdg-open \"" link "\""))
-                    (sleep-for 1)
-                    (let ((graph-name (when (string-match "logseq://graph/\\(.*\\)\\?" link)
-                                        (match-string 1 link))
-                                      ))
+                    (let (
+                          (window-id (string-trim (shell-command-to-string "xdotool getactivewindow")))
+                          (graph-name (when (string-match "logseq://graph/\\(.*\\)\\?" link)
+                                        (match-string 1 link)))
+                          )
+                      (shell-command (concat "xdg-open \"" link "\""))
                       (org-logseq-activate-window-by-graph graph-name)
                       (message link)
-                      (shell-command
-                       (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
-                               " windowactivate %1")
-                       )
-                          )
-                    
+                      (org-logseq-active-window-asynchronous window-id)
+                      )
                     (throw 'exit "open logseq link")
                     )
                    ('page (org-logseq-open-external-by-title link)
@@ -514,6 +555,11 @@ If there is not uuid of current block, send a message."
       (pcase type
         ('url (browse-url link))
         ('page (org-logseq-open-page-inside link))
+        ('pdf 
+         (let ((current-dir (file-name-directory (or buffer-file-name default-directory))))
+           (setq link (expand-file-name link current-dir))
+           (other-window 1)
+           (eaf-open link)))
         (_ (org-logseq-goto-id link))))))
 
 ;;;###autoload
@@ -673,8 +719,14 @@ If there is not uuid of current block, send a message."
 
 (defun org-logseq-send-keys (key)
   "Send KEY to the logseq window."
+  (interactive)
   ;; (shell-command (format  "currentwindow=$(xdotool getwindowfocus);xdotool windowactivate --sync $(xdotool search --onlyvisible --class logseq|tail -1); xdotool key %s;xdotool windowactivate $currentwindow" key))
-  (org-logseq-activate-window-by-graph org-logseq-graph)
+  (message "call org-logseq-send-keys")
+  (message "%s" org-logseq-graph)
+  (org-logseq-activate-window-by-graph org-logseq-graph t)
+  ;; (org-logseq-activate-window-by-graph org-logseq-graph)
+  ;; (org-logseq-open-external-by-title)
+  ;; (sleep-for 2)
   (shell-command (format "xdotool key %s;" key))
   (shell-command
    (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
@@ -689,6 +741,7 @@ If there is not uuid of current block, send a message."
 (defun org-logseq-page-down ()
   "Send Page_Up key to the logseq."
   (interactive)
+  (message "call org-logseq-page-down")
   (org-logseq-send-keys "Page_Down"))
 
 (defun org-logseq-home ()
@@ -841,6 +894,7 @@ If there is not uuid of current block, send a message."
    (org-logseq-minutes-to-string (+ org-logseq-bonus-time org-logseq-pomodoro-time)))
   )
 
+
 (defun org-logseq-set-pomodoro-time (hour minute)
   "Update pomodoro time at point."
   (interactive
@@ -849,6 +903,15 @@ If there is not uuid of current block, send a message."
   (org-entry-put (point) "pomodoro" (format "%dh %dmin" hour minute))
   (org-todo "DONE")
   (org-logseq-update-total-time)
+  )
+
+
+(defun org-logseq-set-review-time (hour minute)
+  "Update pomodoro time at point."
+  (interactive
+   (list (read-number "Hour: " 0) 
+         (read-number "Minute: " 35)))
+  (org-entry-put (point) "review-time" (format "%dh %dmin" hour minute))
   )
 
 (defun org-logseq-set-bonus-time (hour minute)
@@ -918,6 +981,21 @@ If today's journal does not exists, switch to yesterday's journal."
                 (org-logseq-open-external-by-title))
       (message "The file for the previous day does not exist."))))
 
+;; (defun org-logseq-switch-to-next-day-back-up ()
+;;   "Switch to the next day's log file with format YYYY_MM_DD.org."
+;;   (interactive)
+;;   (let* ((current-filename (buffer-file-name))
+;;          (date-string (replace-regexp-in-string "_" "-" (file-name-base current-filename)))
+;;          (current-date (date-to-time date-string))
+;;          (next-date (time-add current-date (days-to-time 1)))
+;;          (next-filename (format-time-string "%Y_%m_%d.org" next-date)))
+;;     (if (file-exists-p next-filename)
+;;         (progn
+;;           (find-file next-filename)
+;;           (org-logseq-open-external-by-title)
+;;           )
+;;       (message "The file for the next day does not exist."))))
+
 (defun org-logseq-switch-to-next-day ()
   "Switch to the next day's log file with format YYYY_MM_DD.org."
   (interactive)
@@ -931,7 +1009,19 @@ If today's journal does not exists, switch to yesterday's journal."
           (find-file next-filename)
           (org-logseq-open-external-by-title)
           )
-      (message "The file for the next day does not exist."))))
+      (progn
+        (let* ((today-string (format-time-string "%Y-%m-%d" (current-time))))
+          (if (string= today-string date-string)
+              (progn
+                (let* ((command (format-time-string " %Y %m %d" next-date))
+                       (command (concat org-logseq-create-journal-command command)))
+                  (shell-command command)
+                  (find-file next-filename)
+                  (org-logseq-open-external-by-title)
+                )
+            )
+          (message "The file for the next day does not exist."))
+        )))))
 
 
 (defun org-logseq-activate ()
@@ -982,27 +1072,29 @@ If today's journal does not exists, switch to yesterday's journal."
       (let ((relative-path (file-relative-name destination (file-name-directory (buffer-file-name)))))
         (insert (format "[[file:%s][%s]]" relative-path filename))))))
 
+(defvar org-logseq-last-dir default-directory
+  "上次在 `org-logseq-insert-and-move-file` 中打开的文件夹路径。")
+
 (defun org-logseq-insert-and-move-file ()
   (interactive)
-  (let* ((selected-file (read-file-name "Select file: "))
+  (let* ((selected-file (read-file-name "Select file: " org-logseq-last-dir))
          (destination-dir (concat org-logseq-dir "/assets/"))
          (filename (file-name-nondirectory selected-file))
-         ;; 生成时间戳后缀
          (time-suffix (format-time-string "_%Y_%m_%d_%H_%M_%S"))
-         ;; 添加时间戳后缀到文件名
-         (new-filename (concat (file-name-sans-extension filename) time-suffix (file-name-extension filename t)))
+         (new-filename (concat (file-name-sans-extension filename)
+                               time-suffix
+                               (file-name-extension filename t)))
          (destination (concat destination-dir new-filename)))
-
-    ;; 检查选择的文件是否存在
     (when (file-exists-p selected-file)
-      ;; 复制文件到新位置
+      ;; 记录本次选择的目录
+      (setq org-logseq-last-dir (file-name-directory selected-file))
+
       (copy-file selected-file destination)
       (delete-file selected-file)
 
-      ;; 计算相对路径并插入原始文件名的链接
-      (let ((relative-path (file-relative-name destination (file-name-directory (buffer-file-name)))))
+      (let ((relative-path
+             (file-relative-name destination (file-name-directory (buffer-file-name)))))
         (insert (format "[[file:%s][%s]]" relative-path filename))))))
-
 
 (defun org-logseq-compact-region-and-replace-formula (start end)
   "Compact the region by removing extra lines, adding spaces, and replacing formula patterns, while preserving the final newline in the region."
