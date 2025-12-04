@@ -715,6 +715,37 @@ it will active the `minibuffer'"
       (if (> pos start)
           (evil-surround-region start pos 'block char)))))
 
+(defun org-logseq-scroll-up ()
+  "Send KEY to the logseq window."
+  (interactive)
+  ;; (shell-command (format  "currentwindow=$(xdotool getwindowfocus);xdotool windowactivate --sync $(xdotool search --onlyvisible --class logseq|tail -1); xdotool key %s;xdotool windowactivate $currentwindow" key))
+  ;; (message "call org-logseq-send-keys")
+  ;; (message "%s" org-logseq-graph)
+  (org-logseq-activate-window-by-graph org-logseq-graph t)
+  ;; (org-logseq-activate-window-by-graph org-logseq-graph)
+  ;; (org-logseq-open-external-by-title)
+  ;; (sleep-for 2)
+  (shell-command "win_id=$(xdotool getactivewindow); eval $(xdotool getwindowgeometry --shell $win_id); eval $(xdotool getmouselocation --shell); cur_x=$X; cur_y=$Y; xdotool mousemove --window $win_id $((WIDTH/2)) $((HEIGHT/2)); xdotool click --repeat 5 4 ; xdotool mousemove $cur_x $cur_y")
+  (shell-command
+   (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+           " windowactivate %1"))
+  )
+
+(defun org-logseq-scroll-down ()
+  "Send KEY to the logseq window."
+  (interactive)
+  ;; (shell-command (format  "currentwindow=$(xdotool getwindowfocus);xdotool windowactivate --sync $(xdotool search --onlyvisible --class logseq|tail -1); xdotool key %s;xdotool windowactivate $currentwindow" key))
+  ;; (message "call org-logseq-send-keys")
+  ;; (message "%s" org-logseq-graph)
+  (org-logseq-activate-window-by-graph org-logseq-graph t)
+  ;; (org-logseq-activate-window-by-graph org-logseq-graph)
+  ;; (org-logseq-open-external-by-title)
+  ;; (sleep-for 2)
+  (shell-command "win_id=$(xdotool getactivewindow); eval $(xdotool getwindowgeometry --shell $win_id); eval $(xdotool getmouselocation --shell); cur_x=$X; cur_y=$Y; xdotool mousemove --window $win_id $((WIDTH/2)) $((HEIGHT/2)); xdotool click --repeat 4 5 ; xdotool mousemove $cur_x $cur_y")
+  (shell-command
+   (concat "xdotool search --name " (shell-quote-argument (frame-parameter nil 'name))
+           " windowactivate %1"))
+  )
 
 
 (defun org-logseq-send-keys (key)
@@ -753,6 +784,17 @@ it will active the `minibuffer'"
   "Send End key to the logseq."
   (interactive)
   (org-logseq-send-keys "End"))
+
+(defun org-logseq-up ()
+  "Send Up key to the logseq."
+  (interactive)
+  (org-logseq-send-keys "Up"))
+
+
+(defun org-logseq-down ()
+  "Send Down key to the logseq."
+  (interactive)
+  (org-logseq-send-keys "Down"))
 
 ;; (defvar org-logseq-overlay-map
 ;;   (let ((map (make-sparse-keymap)))
@@ -1125,6 +1167,35 @@ If today's journal does not exists, switch to yesterday's journal."
     (unless (or (= (point) (point-max))
                 (string= "\n" (buffer-substring-no-properties end (1+ end))))
       (insert "\n"))))
+
+
+(defvar org-logseq-last-picture-width nil
+  "Last width value used by `org-logseq-set-picture-width'.")
+
+(defun org-logseq-set-picture-width (width)
+  "Set Logseq-style image width on the current line to WIDTH.
+
+Only modifies the line at point. Searches for a pattern like
+\"{:width }\" or \"{:width 300}\" within the line and replaces it with
+\"{:width WIDTH}\".
+
+If no \"{:width ...}\" is found on the current line, does nothing."
+  (interactive
+   (list (read-number
+          (if org-logseq-last-picture-width
+              (format "Set picture width (default %d): " org-logseq-last-picture-width)
+            "Set picture width (e.g., 500): ")
+          org-logseq-last-picture-width)))
+  (save-excursion
+    (let ((line-beg (line-beginning-position))
+          (line-end (line-end-position))
+          ;; Match {:width }, {:width 300}, {: width   300 }, etc.
+          (pattern "{[[:space:]]*:width[[:space:]]*\\([0-9]+\\)?[[:space:]]*}"))
+      (goto-char line-beg)
+      (when (re-search-forward pattern line-end t)
+        ;; Replace the whole match with the formatted width
+        (replace-match (format "{:width %d}" width) t t)
+        (setq org-logseq-last-picture-width width)))))
 
 ;; (add-hook 'org-logseq-mode-hook
 ;;             #'(lambda ()
