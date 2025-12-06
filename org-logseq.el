@@ -1172,6 +1172,41 @@ If today's journal does not exists, switch to yesterday's journal."
 (defvar org-logseq-last-picture-width nil
   "Last width value used by `org-logseq-set-picture-width'.")
 
+;; (defun org-logseq-set-picture-width (width)
+;;   "Set Logseq-style image width on the current line to WIDTH.
+
+;; Only modifies the line at point. Searches for a pattern like
+;; \"{:width }\" or \"{:width 300}\" within the line and replaces it with
+;; \"{:width WIDTH}\".
+
+;; If no \"{:width ...}\" is found on the current line, does nothing."
+;;   (interactive
+;;    (list (read-number
+;;           (if org-logseq-last-picture-width
+;;               (format "Set picture width (default %d): " org-logseq-last-picture-width)
+;;             "Set picture width (e.g., 500): ")
+;;           org-logseq-last-picture-width)))
+;;   (save-excursion
+;;     (let ((line-beg (line-beginning-position))
+;;           (line-end (line-end-position))
+;;           ;; Match {:width }, {:width 300}, {: width   300 }, etc.
+;;           (pattern "{[[:space:]]*:width[[:space:]]*\\([0-9]+\\)?[[:space:]]*}"))
+;;       (goto-char line-beg)
+;;       (when (re-search-forward pattern line-end t)
+;;         ;; Replace the whole match with the formatted width
+;;         (replace-match (format "{:width %d}" width) t t)
+;;         (setq org-logseq-last-picture-width width)))))
+
+(defun org-logseq--normalize-width (w)
+  "Normalize user-entered width W to a three-digit value (<= 999).
+If W is a single digit (0–9), treat it as hundreds (e.g., 5 -> 500).
+If W is two digits (10–99), treat it as tens (e.g., 45 -> 450).
+If W is three or more digits, keep as-is but cap at 999."
+  (cond
+   ((and (>= w 0) (<= w 9)) (* w 100))
+   ((and (>= w 10) (<= w 99)) (* w 10))
+   (t (min w 999))))
+
 (defun org-logseq-set-picture-width (width)
   "Set Logseq-style image width on the current line to WIDTH.
 
@@ -1184,18 +1219,19 @@ If no \"{:width ...}\" is found on the current line, does nothing."
    (list (read-number
           (if org-logseq-last-picture-width
               (format "Set picture width (default %d): " org-logseq-last-picture-width)
-            "Set picture width (e.g., 500): ")
+            "Set picture width (e.g., 500 | shorthand: 5->500, 45->450): ")
           org-logseq-last-picture-width)))
-  (save-excursion
-    (let ((line-beg (line-beginning-position))
-          (line-end (line-end-position))
-          ;; Match {:width }, {:width 300}, {: width   300 }, etc.
-          (pattern "{[[:space:]]*:width[[:space:]]*\\([0-9]+\\)?[[:space:]]*}"))
-      (goto-char line-beg)
-      (when (re-search-forward pattern line-end t)
-        ;; Replace the whole match with the formatted width
-        (replace-match (format "{:width %d}" width) t t)
-        (setq org-logseq-last-picture-width width)))))
+  (let ((width (org-logseq--normalize-width width)))
+    (save-excursion
+      (let ((line-beg (line-beginning-position))
+            (line-end (line-end-position))
+            ;; Match {:width }, {:width 300}, {: width   300 }, etc.
+            (pattern "{[[:space:]]*:width[[:space:]]*\\([0-9]+\\)?[[:space:]]*}"))
+        (goto-char line-beg)
+        (when (re-search-forward pattern line-end t)
+          ;; Replace the whole match with the formatted width
+          (replace-match (format "{:width %d}" width) t t)
+          (setq org-logseq-last-picture-width width))))))
 
 ;; (add-hook 'org-logseq-mode-hook
 ;;             #'(lambda ()
