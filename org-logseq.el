@@ -67,6 +67,13 @@
 
 (make-variable-buffer-local 'org-logseq-block-embed-overlay-p)
 
+(defcustom org-logseq-update-timestamp-threshold 3600
+  "Minimum time difference in seconds before updating file timestamp.
+Only update the last-update-time if the difference between current time
+and the last update time exceeds this threshold."
+  :type 'integer
+  :group 'org-logseq)
+
 
 ;; deprecate
 (defun org-logseq-grep-query (page-or-id)
@@ -496,11 +503,21 @@ it will active the `minibuffer'"
          (org-logseq-open-external-by-title)
          (throw 'exit "Open current page in logseq."))))))
 
-(defun org-logseq-update-file-timestamp ()
-  "Update current buffer's last-update-time property."
+(defun org-logseq-update-file-timestamp (&optional threshold)
+  "Update current buffer's last-update-time property.
+Only update if the time difference exceeds THRESHOLD seconds.
+If THRESHOLD is not provided, use `org-logseq-update-timestamp-threshold'."
   (interactive)
-    (org-logseq-set-begin-value "last-update-time" (current-time-string))
-)
+  (let* ((threshold (or threshold org-logseq-update-timestamp-threshold))
+         (last-update-str (org-logseq-get-begin-value "last-update-time"))
+         (should-update t))
+    (when last-update-str
+      (let* ((last-update-time (date-to-time last-update-str))
+             (current-time (current-time))
+             (time-diff (float-time (time-subtract current-time last-update-time))))
+        (setq should-update (> time-diff threshold))))
+    (when should-update
+      (org-logseq-set-begin-value "last-update-time" (current-time-string)))))
 
 ;;;###autoload
 (defun org-logseq-update-selected-file-timestamp ()
@@ -1114,7 +1131,7 @@ If today's journal does not exists, switch to yesterday's journal."
       (let ((relative-path (file-relative-name destination (file-name-directory (buffer-file-name)))))
         (insert (format "[[file:%s][%s]]" relative-path filename))))))
 
-(defvar org-logseq-last-dir default-directory
+(defvar org-logseq-last-dir  (expand-file-name "Downloads/" "~")
   "上次在 `org-logseq-insert-and-move-file` 中打开的文件夹路径。")
 
 (defun org-logseq-insert-and-move-file ()
@@ -1232,6 +1249,42 @@ If no \"{:width ...}\" is found on the current line, does nothing."
           ;; Replace the whole match with the formatted width
           (replace-match (format "{:width %d}" width) t t)
           (setq org-logseq-last-picture-width width))))))
+
+(defun org-logseq-unwrap-hl-surround ()
+  "If point is inside a [[hl-N#]]^^ ... ^^ wrapped text, unwrap it.
+
+Pattern:
+  [[hl-<digits>#]]^^...^^
+Only touches the current line. Does nothing if no wrapper is found."
+  (interactive)
+  (save-excursion
+    (let* ((pt (point))
+           (line-beg (line-beginning-position))
+           (line-end (line-end-position))
+           (start-rx "\\[\\[.+#\\]\\]\\^\\^")
+           (end-rx "\\^\\^")
+           start-beg start-end end-beg end-end)
+      ;; Find start marker before point
+      (goto-char pt)
+      (when (re-search-backward start-rx line-beg t)
+        (setq start-beg (match-beginning 0)
+              start-end (match-end 0)))
+      ;; Find end marker after point
+      (goto-char pt)
+      (when (re-search-forward end-rx line-end t)
+        (setq end-beg (match-beginning 0)
+              end-end (match-end 0)))
+      ;; Ensure point is between markers
+      (when (and start-beg end-beg (< start-end pt) (< pt end-beg))
+        ;; Delete start marker exactly
+        (delete-region start-beg start-end)
+        ;; After deletion, end marker position may shift; re-scan to be robust
+        (let (new-end-beg new-end-end)
+          (goto-char pt)
+          (when (re-search-forward end-rx line-end t)
+            (setq new-end-beg (match-beginning 0)
+                  new-end-end (match-end 0))
+            (delete-region new-end-beg new-end-end)))))))
 
 ;; (add-hook 'org-logseq-mode-hook
 ;;             #'(lambda ()
